@@ -66,6 +66,7 @@ int main() {
     printf("\rWrote %dB data!", wrote);
   }
   puts("\nWrote 1MB data done!");
+#if 0
   // 测试9MB的数据
   size_test_kb = 1024 * 9;
   for (int i = 1; i <= size_test_kb; i++) {
@@ -83,5 +84,24 @@ int main() {
     puts("I must check the code...");
     printf("The file size: %d\n", f_large->size);
   }
+#endif
+  efclose(f_large);
+  puts("### FORMAT I/O TEST ###");
+  EFILE *f_format = efopen(filename, "w");
+  if (!f_format) {
+    printf("Could not open %s to test format!\n", filename);
+    return 8;
+  }
+  // 格式化写入测试
+  efprintf(f_format, "TEST INT: %d, FLOAT: %f, STRING: \"%s\"", 102, 0.132, "Test String...");
+  efclose(f_format);
+  EFILE *f_format_reader = efopen(filename, "r");
+  if (!f_format_reader) {
+    printf("Could not open %s to read format!\n", filename);
+    return 9;
+  }
+  efread(buf, sizeof(buf), 1, f_format_reader);
+  printf("Got wrote string: %s\n", buf);
+  puts("### FORMAT I/O TEST DONE ###");
   return 0;
 }

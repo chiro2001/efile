@@ -15,6 +15,8 @@ EFILE **tail = NULL;
 int efiles_max_files_size = 1024 * 1024 * 10;
 // 最多文件个数：默认1024
 int efiles_max_file_num = 1024;
+// 是efprintf等要用到的内存
+char _efiles_buf_[EFILE_BUF_SIZE];
 
 /* ========== 内部功能 ========== */
 
@@ -134,10 +136,13 @@ void efiles_write(EFILE *stream, void *data, size_t size) {
 }
 
 // @Description: 读取文件数据
-void efiles_read(EFILE *stream, void *data, size_t size) {
+size_t efiles_read(EFILE *stream, void *data, size_t size) {
   if (!stream || !data || !size) return;
+  size = size + stream->offset > stream->size ? stream->size - stream->offset
+                                              : size;
   memcpy(data, (uint8_t *)stream->data + stream->offset, size);
   stream->offset += size;
+  return size;
 }
 
 /* ========== 上层 API ========== */
@@ -185,11 +190,17 @@ size_t efwrite(void *buf, size_t size, size_t count, EFILE *stream) {
 size_t efread(void *buf, size_t size, size_t count, EFILE *stream) {
   if (!buf || !size || !count || !stream || stream->flag & 0x80) return 0;
   uint8_t *p = buf;
+  size_t wrote = 0;
   for (size_t i = 0; i < count; i++) {
-    efiles_read(stream, p, size);
+    wrote = efiles_read(stream, p, size);
+    if (wrote != size) return p - (uint8_t *)buf;
     p += size;
   }
   return size * count;
 }
 
 int efclose(EFILE *stream) { return efiles_close(stream); }
+
+// 使用宏定义完成
+// int efscanf(EFILE *stream, const char *format, ...);
+// int efprintf(EFILE *stream, const char *format, ...);
