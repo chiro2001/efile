@@ -46,7 +46,7 @@ int main() {
   // 删除文件之后尝试打开
   EFILE *f_none = efopen(filename, "r");
   if (f_none) {
-    printf("Opened a file does not exist...QAQ\n", filename);
+    printf("Opened a file does not exist...QAQ\n");
     return 6;
   }
   puts("### DELETE TEST DONE ###");
@@ -60,10 +60,10 @@ int main() {
   // 测试1MB的数据
   char block[1024] = {0};
   int size_test_kb = 1024;
-  int wrote = 0;
+  size_t wrote = 0;
   for (int i = 1; i <= size_test_kb; i++) {
     wrote += efwrite(block, 1024, 1, f_large);
-    printf("\rWrote %dB data!", wrote);
+    printf("\rWrote %zuB data!", wrote);
   }
   puts("\nWrote 1MB data done!");
 #if 0
@@ -71,7 +71,7 @@ int main() {
   size_test_kb = 1024 * 9;
   for (int i = 1; i <= size_test_kb; i++) {
     wrote += efwrite(block, 1024, 1, f_large);
-    if (i % 100 == 0) printf("\rWrote %dB data!", wrote);
+    if (i % 100 == 0) printf("\rWrote %zuB data!", wrote);
   }
   puts("\nWrote 9MB data done!");
   // 再测试写入一个字节

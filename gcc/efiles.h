@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <assert.h>
 // #include <errno.h>     // 返回错误信息(暂无)
 
 // 最大文件名长度
