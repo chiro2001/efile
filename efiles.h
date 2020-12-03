@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 // #include <errno.h>     // 返回错误信息(暂无)
 
 // 最大文件名长度
@@ -50,9 +51,10 @@ size_t efread(void *buf, size_t size, size_t count, EFILE *stream);
 size_t efwrite(void *buf, size_t size, size_t count, EFILE *stream);
 size_t eftell(EFILE *stream);
 int efclose(EFILE *stream);
-
-// int efscanf(EFILE *stream, const char *format, ...);
+int efgetchar(EFILE *stream);
+int efscanf(EFILE *stream, const char *format, ...);
 // int efprintf(EFILE *stream, const char *format, ...);
+
 // 中层 API
 void efiles_write(EFILE *stream, void *data, size_t size);
 size_t efiles_read(EFILE *stream, void *data, size_t size);

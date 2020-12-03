@@ -137,7 +137,7 @@ void efiles_write(EFILE *stream, void *data, size_t size) {
 
 // @Description: 读取文件数据
 size_t efiles_read(EFILE *stream, void *data, size_t size) {
-  if (!stream || !data || !size) return;
+  if (!stream || !data || !size) return 0;
   size = size + stream->offset > stream->size ? stream->size - stream->offset
                                               : size;
   memcpy(data, (uint8_t *)stream->data + stream->offset, size);
@@ -176,7 +176,7 @@ size_t eftell(EFILE *stream) {
 size_t efwrite(void *buf, size_t size, size_t count, EFILE *stream) {
   if (!buf || !size || !count || !stream || stream->flag & EFILE_FLAG_ERROR)
     return 0;
-  uint8_t *p = buf;
+  uint8_t *p = (uint8_t *)buf;
   for (size_t i = 0; i < count; i++) {
     efiles_write(stream, p, size);
     if (stream->size >= efiles_max_files_size) {
@@ -189,7 +189,7 @@ size_t efwrite(void *buf, size_t size, size_t count, EFILE *stream) {
 
 size_t efread(void *buf, size_t size, size_t count, EFILE *stream) {
   if (!buf || !size || !count || !stream || stream->flag & 0x80) return 0;
-  uint8_t *p = buf;
+  uint8_t *p = (uint8_t *)buf;
   size_t wrote = 0;
   for (size_t i = 0; i < count; i++) {
     wrote = efiles_read(stream, p, size);
@@ -199,8 +199,209 @@ size_t efread(void *buf, size_t size, size_t count, EFILE *stream) {
   return size * count;
 }
 
+int efgetchar(EFILE *stream) {
+  int c;
+  size_t size = efiles_read(stream, &c, sizeof(char));
+  if (size == 0) return EOF;
+  return c;
+}
+
 int efclose(EFILE *stream) { return efiles_close(stream); }
 
 // 使用宏定义完成
-// int efscanf(EFILE *stream, const char *format, ...);
 // int efprintf(EFILE *stream, const char *format, ...);
+
+// @Description: 找到格式控制字符串中的控制参数个数还有对应位置
+//               注意要调用efscanf_formats_clean来清理内存防止内存泄露
+// @Return: 一个元素为char*类型的列表，长度为len +
+//          1，末尾被置零。列表元素对应指向'%'
+const char **efscanf_formats_find(const char *format) {
+  if (!format || !*format) return NULL;
+  // 最多就是len/2个控制参数
+  const char **format_list =
+      (const char **)malloc(sizeof(const char *) * (strlen(format) / 2 + 1));
+  memset(format_list, 0, sizeof(char *) * (strlen(format) / 2 + 1));
+  const char *p = format;
+  const char **tail = format_list;
+  while (*p) {
+    if (*p == '%') {
+      *tail = p;
+      tail++;
+      if (*(p + 1) != 0 && *(p + 1) == '%') p++;
+    }
+    p++;
+  }
+  return format_list;
+}
+void efscanf_formats_clean(const char **format_list) {
+  if (!format_list) return;
+  free(format_list);
+}
+
+// @Description： 下面用到的输入限制函数们
+int efscanf_read_limit_nospace(char c) { return !isspace(c); }
+int efscanf_read_limit_number(char c) { return '0' <= c && c <= '9'; }
+int efscanf_read_limit_float_number(char c) {
+  return c == '.' || ('0' <= c && c <= '9');
+}
+
+// @Description: 读取文件中某一块的位置到字符串中
+// @Return: 是否 (读到文件尾部 或者 读取到字符串尾部)
+int efscanf_block_read(EFILE *stream, char *dst, int (*limit)(char)) {
+  char c;
+  char *sp = dst;
+  // 忽略前导空白
+  while ((c = efgetchar(stream)) != EOF && c != 0 && isspace(c))
+    ;
+  if (c == EOF || c == 0) return 1;
+  *sp++ = c;
+  // 读取到下一个空白或者读到末尾
+  uint8_t flag_end = 0;
+  while (1) {
+    c = efgetchar(stream);
+    if (c == EOF || c == 0) {
+      *sp = 0;
+      flag_end = 1;
+      break;
+    }
+    if (!limit(c)) {
+      *sp = 0;
+      break;
+    }
+    *sp = c;
+    sp++;
+  }
+  // 多读取了一个...
+  // 悄悄移动文件指针...
+  stream->offset--;
+  return flag_end;
+}
+
+int efscanf(EFILE *stream, const char *format, ...) {
+  if (!stream || stream->flag & 0x80 || !format || !*format) return 0;
+  // 数一数控制符的数量
+  const char **format_list = efscanf_formats_find(format);
+  int format_list_len = 0;
+  // 当前处理到的格式字符所在指针，确保能访问到p+1
+  const char **fp = format_list;
+  while (*(fp++)) format_list_len++;
+  fp = format_list;
+  va_list valist;
+  // 为所有参数初始化
+  va_start(valist, format_list_len);
+  // 当前读取到的字符
+  char c;
+  // 当前处理到的格式字符
+  const char *f = format;
+  // 记录成功赋值了几个参数
+  int count = 0;
+  // 是否到末尾
+  uint8_t flag_end;
+  while (*f) {
+    // 比较模式：按照字符比较/按照控制符比较
+    if (*fp == f) {
+      // 处理到格式字符部分，就按照控制符比较
+      // 先比较%后面一个字符...
+      // 对无符号照样写入，忽略%u_，直接变成%_
+      if (*(*fp + 1) == 'u' && *(*fp + 2)) fp[1] += 1;
+      switch (*(*fp + 1)) {
+        case 'c':  // 字符模式
+          c = efgetchar(stream);
+          if (c == EOF || c == 0) goto efscanf_exit;
+          *((char *)va_arg(valist, char *)) = c;
+          count++;
+          f++;
+          break;
+        case 's':  // 字符串模式
+          if (efscanf_block_read(stream, (char *)va_arg(valist, char *),
+                                 efscanf_read_limit_nospace)) {
+            count++;
+            goto efscanf_exit;
+          }
+          count++;
+          f++;
+          break;
+        case 'd':  // 整型模式
+          flag_end = efscanf_block_read(stream, _efiles_buf_,
+                                        efscanf_read_limit_number);
+          *((int *)va_arg(valist, int *)) = atoi(_efiles_buf_);
+          count++;
+          f++;
+          if (flag_end) goto efscanf_exit;
+          break;
+        case 'f':  // 单精度浮点数模式
+          flag_end = efscanf_block_read(stream, _efiles_buf_,
+                                        efscanf_read_limit_float_number);
+          *((float *)va_arg(valist, float *)) = (float)atof(_efiles_buf_);
+          count++;
+          f++;
+          if (flag_end) goto efscanf_exit;
+          break;
+        case 'l':  // long 模式
+          // 注意，这部分如果遇到不合理的格式字符串，会访问非法内存
+          switch (*(*fp + 2)) {
+            case 'e':
+            case 'f':  // double 模式
+              flag_end = efscanf_block_read(stream, _efiles_buf_,
+                                            efscanf_read_limit_float_number);
+              *((double *)va_arg(valist, double *)) =
+                  (double)atof(_efiles_buf_);
+              count++;
+              f += 2;
+              if (flag_end) goto efscanf_exit;
+              break;
+            case 'd':
+            default:  // 默认用 long (int) 类型
+              flag_end = efscanf_block_read(stream, _efiles_buf_,
+                                            efscanf_read_limit_number);
+              *((long *)va_arg(valist, long *)) = (long)atol(_efiles_buf_);
+              count++;
+              f += 2;
+              if (flag_end) goto efscanf_exit;
+              break;
+          }
+          break;
+        case 'L':  // long long 模式
+          // 注意，这部分如果遇到不合理的格式字符串，会访问非法内存
+          switch (*(*fp + 2)) {
+            case 'e':
+            case 'f':  // long double 模式
+              // 不知道合不合适，这里使用atof
+              flag_end = efscanf_block_read(stream, _efiles_buf_,
+                                            efscanf_read_limit_float_number);
+              *((long double *)va_arg(valist, long double *)) =
+                  (long double)atof(_efiles_buf_);
+              count++;
+              f += 2;
+              if (flag_end) goto efscanf_exit;
+              break;
+            default:  // 默认就是 long int，long 也是 long int。
+              flag_end = efscanf_block_read(stream, _efiles_buf_,
+                                            efscanf_read_limit_number);
+              *((long long *)va_arg(valist, long long *)) =
+                  (long long)atoll(_efiles_buf_);
+              count++;
+              f += 2;
+              if (flag_end) goto efscanf_exit;
+              break;
+          }
+          break;
+        default:
+          // 未支持格式!!
+          break;
+      }
+      fp++;
+    } else {
+      // 处理到非格式控制符部分，按照字符比较
+      c = efgetchar(stream);
+      if (c == EOF || c == 0) return count;
+      // 不匹配直接退出
+      if (c != *f) return count;
+      // 匹配就开始下一轮比较
+    }
+    f++;
+  }
+efscanf_exit:
+  va_end(valist);
+  return count;
+}

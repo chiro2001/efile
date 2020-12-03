@@ -93,7 +93,9 @@ int main() {
     return 8;
   }
   // 格式化写入测试
-  efprintf(f_format, "TEST INT: %d, FLOAT: %f, STRING: \"%s\"", 102, 0.132, "Test String...");
+  puts("Testing efprintf...");
+  efprintf(f_format, "TEST INT: %d, FLOAT: %f, DOUBLE: %f, STRING: \"%s\"", 102,
+           0.132, 3.141, "Test String...");
   efclose(f_format);
   EFILE *f_format_reader = efopen(filename, "r");
   if (!f_format_reader) {
@@ -101,7 +103,23 @@ int main() {
     return 9;
   }
   efread(buf, sizeof(buf), 1, f_format_reader);
+  efclose(f_format_reader);
   printf("Got wrote string: %s\n", buf);
+  puts("Testing efscanf...");
+  f_format = efopen(filename, "r");
+  if (!f_format) {
+    printf("Could not open %s to test format!\n", filename);
+    return 10;
+  }
+  int t1 = -1;
+  float t2 = 1.0f;
+  double t3 = 1.0;
+  char t4[512] = "HEYHEYHEY";
+  int count =
+      efscanf(f_format, "TEST INT: %d, FLOAT: %f, DOUBLE: %lf, STRING: \"%s\"",
+              &t1, &t2, &t3, t4);
+  printf("Got %d data: INT: %d, FLOAT: %f, DOUBLE: %lf, STRING: \"%s\"\n",
+         count, t1, t2, t3, t4);
   puts("### FORMAT I/O TEST DONE ###");
   return 0;
 }
