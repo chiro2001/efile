@@ -53,3 +53,9 @@ dkms.conf
 
 # CMake
 build/
+
+# vs
+vs2019/efilee
+vs2019/efile/.vs
+vs2019/efile/Debug
+vs2019/efile/x64
